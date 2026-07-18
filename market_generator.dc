@@ -1,0 +1,132 @@
+# Market Generator — отрасли, города, сезонность
+
+from util import pick
+
+fn city_profiles() {
+    return [
+        {"city": "Moscow", "rent_mult": 1.8, "salary_mult": 1.5, "demand_mult": 1.4, "competition_mult": 1.5},
+        {"city": "SaintPetersburg", "rent_mult": 1.4, "salary_mult": 1.3, "demand_mult": 1.2, "competition_mult": 1.3},
+        {"city": "Novosibirsk", "rent_mult": 1.0, "salary_mult": 1.0, "demand_mult": 1.0, "competition_mult": 1.0},
+        {"city": "Kazan", "rent_mult": 1.1, "salary_mult": 1.05, "demand_mult": 1.05, "competition_mult": 1.1},
+        {"city": "Yekaterinburg", "rent_mult": 1.15, "salary_mult": 1.1, "demand_mult": 1.08, "competition_mult": 1.15}
+    ]
+}
+
+fn industry_types() {
+    return ["restaurant", "saas", "retail", "production", "autoservice", "logistics"]
+}
+
+# seasonality[month-1]: множитель спроса 1..12
+fn industry_profile(type_name) {
+    if type_name == "restaurant" {
+        return {
+            "type": "restaurant",
+            "avg_check": 1200,
+            "base_customers": 1800,
+            "cogs_ratio": 0.32,
+            "labor_share": 0.28,
+            "rent_base": 150000,
+            "marketing_effect": 0.0008,
+            "energy_use": 1.2,
+            "seasonality": [0.85, 0.9, 1.0, 1.05, 1.1, 1.15, 1.2, 1.15, 1.05, 1.0, 0.95, 1.25],
+            "initial_investment": 4500000,
+            "employees_base": 8,
+            "salary_base": 70000
+        }
+    }
+    if type_name == "saas" {
+        return {
+            "type": "saas",
+            "avg_check": 3500,
+            "base_customers": 120,
+            "cogs_ratio": 0.08,
+            "labor_share": 0.45,
+            "rent_base": 80000,
+            "marketing_effect": 0.0015,
+            "energy_use": 0.4,
+            "seasonality": [1.0, 1.0, 1.05, 1.05, 1.0, 0.95, 0.9, 0.9, 1.05, 1.1, 1.1, 1.0],
+            "initial_investment": 3000000,
+            "employees_base": 6,
+            "salary_base": 140000,
+            "churn_base": 0.04,
+            "cac_base": 8000
+        }
+    }
+    if type_name == "retail" {
+        return {
+            "type": "retail",
+            "avg_check": 2500,
+            "base_customers": 2200,
+            "cogs_ratio": 0.55,
+            "labor_share": 0.18,
+            "rent_base": 200000,
+            "marketing_effect": 0.0006,
+            "energy_use": 1.0,
+            "seasonality": [0.8, 0.85, 0.95, 1.0, 1.05, 1.05, 1.0, 1.0, 1.05, 1.15, 1.25, 1.4],
+            "initial_investment": 5000000,
+            "employees_base": 10,
+            "salary_base": 65000
+        }
+    }
+    if type_name == "production" {
+        return {
+            "type": "production",
+            "avg_check": 15000,
+            "base_customers": 80,
+            "cogs_ratio": 0.48,
+            "labor_share": 0.25,
+            "rent_base": 250000,
+            "marketing_effect": 0.0004,
+            "energy_use": 2.0,
+            "seasonality": [0.95, 1.0, 1.05, 1.1, 1.1, 1.05, 0.95, 0.9, 1.05, 1.1, 1.05, 0.95],
+            "initial_investment": 12000000,
+            "employees_base": 25,
+            "salary_base": 85000
+        }
+    }
+    if type_name == "autoservice" {
+        return {
+            "type": "autoservice",
+            "avg_check": 8000,
+            "base_customers": 280,
+            "cogs_ratio": 0.4,
+            "labor_share": 0.3,
+            "rent_base": 180000,
+            "marketing_effect": 0.0007,
+            "energy_use": 1.1,
+            "seasonality": [1.15, 1.1, 1.05, 1.0, 0.95, 0.9, 0.85, 0.9, 1.0, 1.1, 1.15, 1.2],
+            "initial_investment": 6000000,
+            "employees_base": 7,
+            "salary_base": 90000
+        }
+    }
+    # logistics
+    return {
+        "type": "logistics",
+        "avg_check": 4500,
+        "base_customers": 400,
+        "cogs_ratio": 0.35,
+        "labor_share": 0.32,
+        "rent_base": 220000,
+        "marketing_effect": 0.0005,
+        "energy_use": 1.8,
+        "seasonality": [0.9, 0.95, 1.0, 1.05, 1.05, 1.0, 0.95, 0.95, 1.05, 1.15, 1.25, 1.3],
+        "initial_investment": 8000000,
+        "employees_base": 15,
+        "salary_base": 75000
+    }
+}
+
+fn random_industry() {
+    return industry_profile(pick(industry_types()))
+}
+
+fn random_city() {
+    return pick(city_profiles())
+}
+
+fn seasonality_factor(profile, month) {
+    let idx = month - 1
+    let s = profile["seasonality"]
+    return s[idx]
+}

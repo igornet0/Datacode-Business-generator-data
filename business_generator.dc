@@ -1,0 +1,119 @@
+# Business Generator — создание компаний
+
+from util import round2, clamp
+from market_generator import random_industry, random_city
+
+fn create_business(biz_id, world) {
+    let industry = random_industry()
+    let city = random_city()
+    let employees = max(1, round(industry["employees_base"] * (0.7 + random() * 0.8)))
+    let salary = round2(industry["salary_base"] * city["salary_mult"] * (0.9 + random() * 0.25))
+    let rent = round2(industry["rent_base"] * city["rent_mult"] * (0.85 + random() * 0.35))
+    let investment = round2(industry["initial_investment"] * city["rent_mult"] * (0.8 + random() * 0.5))
+    let marketing = round2(investment * (0.008 + random() * 0.02))
+    let tax_roll = random()
+    let tax_system = "USN_6"
+    if tax_roll > 0.55 {
+        tax_system = "USN_15"
+    }
+
+    let cash = round2(investment * (0.35 + random() * 0.25))
+    let price_mult = clamp(0.85 + random() * 0.35, 0.7, 1.4)
+    let reputation = clamp(0.45 + random() * 0.3, 0.2, 0.9)
+
+    let biz = {
+        "id": biz_id,
+        "type": industry["type"],
+        "country": "Russia",
+        "city": city["city"],
+        "employees": employees,
+        "salary": salary,
+        "rent": rent,
+        "tax_system": tax_system,
+        "marketing_budget": marketing,
+        "initial_investment": investment,
+        "cash": cash,
+        "debt": 0,
+        "equipment": round2(investment * 0.35),
+        "stage": "opening",
+        "reputation": reputation,
+        "price_mult": price_mult,
+        "months_alive": 0,
+        "months_in_stage": 0,
+        "capacity": 1.0,
+        "quality": clamp(0.5 + random() * 0.35, 0.3, 0.95),
+        "active": true,
+        "exit_reason": "",
+        "cum_revenue": 0,
+        "cum_profit": 0,
+        "peak_cash": cash,
+        "city_rent_mult": city["rent_mult"],
+        "city_demand_mult": city["demand_mult"],
+        "city_competition_mult": city["competition_mult"],
+        "avg_check": industry["avg_check"],
+        "base_customers": industry["base_customers"],
+        "cogs_ratio": industry["cogs_ratio"],
+        "labor_share": industry["labor_share"],
+        "marketing_effect": industry["marketing_effect"],
+        "energy_use": industry["energy_use"],
+        "seasonality": industry["seasonality"],
+        "mrr": 0,
+        "churn": 0.04,
+        "subscribers": 0
+    }
+
+    if industry["type"] == "saas" {
+        biz["subscribers"] = round(industry["base_customers"] * (0.3 + random() * 0.5))
+        biz["mrr"] = round2(biz["subscribers"] * industry["avg_check"] * biz["price_mult"])
+        biz["churn"] = industry["churn_base"]
+        biz["cash"] = round2(cash + investment * 0.1)
+    }
+
+    return biz
+}
+
+fn create_businesses(n, world) {
+    let list = []
+    let i = 1
+    while i <= n {
+        push(list, create_business(i, world))
+        i = i + 1
+    }
+    return list
+}
+
+fn business_snapshot_headers() {
+    return [
+        "id", "type", "country", "city", "employees", "salary", "rent",
+        "tax_system", "marketing_budget", "initial_investment", "cash", "debt",
+        "equipment", "stage", "reputation", "price_mult", "quality", "capacity"
+    ]
+}
+
+fn business_snapshot_row(b) {
+    return [
+        b["id"], b["type"], b["country"], b["city"], b["employees"],
+        round2(b["salary"]), round2(b["rent"]), b["tax_system"],
+        round2(b["marketing_budget"]), round2(b["initial_investment"]),
+        round2(b["cash"]), round2(b["debt"]), round2(b["equipment"]),
+        b["stage"], round2(b["reputation"]), round2(b["price_mult"]),
+        round2(b["quality"]), round2(b["capacity"])
+    ]
+}
+
+fn outcome_headers() {
+    return [
+        "id", "type", "city", "final_stage", "months_alive", "exit_reason",
+        "final_cash", "final_debt", "cum_revenue", "cum_profit", "peak_cash",
+        "employees", "reputation"
+    ]
+}
+
+fn outcome_row(b) {
+    return [
+        b["id"], b["type"], b["city"], b["stage"], b["months_alive"],
+        b["exit_reason"], round2(b["cash"]), round2(b["debt"]),
+        round2(b["cum_revenue"]), round2(b["cum_profit"]), round2(b["peak_cash"]),
+        b["employees"], round2(b["reputation"])
+    ]
+}

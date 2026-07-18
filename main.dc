@@ -1,0 +1,138 @@
+# Business Simulation Engine
+# Симулятор жизненного цикла бизнеса → CSV датасет
+#
+# Запуск:
+#   datacode busines_generater/main.dc
+#   datacode busines_generater/main.dc 50 60 42
+# Аргументы: n_businesses, months, seed
+
+from util import to_int
+from world_generator import create_world, tick_world, world_row
+from business_generator import create_businesses, business_snapshot_row, outcome_row
+from simulation_engine import simulate_business_month
+from dataset_exporter import export_all
+
+fn run_simulation(n_businesses, months, seed) {
+    n_businesses = to_int(n_businesses)
+    months = to_int(months)
+    seed = to_int(seed)
+    random_seed(seed)
+
+    print("============================================================")
+    print("Business Simulation Engine")
+    print("============================================================")
+    print("businesses:", n_businesses, " months:", months, " seed:", seed)
+    print()
+
+    let world = create_world(2024, 1)
+    let businesses = create_businesses(n_businesses, world)
+
+    let world_rows = []
+    let monthly_rows = []
+    let event_rows = []
+    let decision_rows = []
+    let last_profits = []
+
+    let i = 0
+    while i < n_businesses {
+        push(last_profits, 0)
+        i = i + 1
+    }
+
+    let biz_rows = []
+    for b in businesses {
+        push(biz_rows, business_snapshot_row(b))
+    }
+
+    push(world_rows, world_row(world))
+
+    let m = 0
+    while m < months {
+        # сначала экономика компаний в текущем месяце мира
+        let bi = 0
+        while bi < n_businesses {
+            let biz = businesses[bi]
+            let result = simulate_business_month(biz, world, last_profits[bi], event_rows, decision_rows)
+            businesses[bi] = result["biz"]
+            last_profits[bi] = result["profit"]
+            if result["row"] != null {
+                push(monthly_rows, result["row"])
+            }
+            bi = bi + 1
+        }
+
+        # затем тик мира к следующему месяцу
+        if m < months - 1 {
+            world = tick_world(world)
+            push(world_rows, world_row(world))
+        }
+
+        if (m + 1) % 12 == 0 or m == months - 1 {
+            let alive = 0
+            let bankrupt = 0
+            let sold = 0
+            for b in businesses {
+                if b["active"] {
+                    alive = alive + 1
+                }
+                if b["exit_reason"] == "bankrupt" {
+                    bankrupt = bankrupt + 1
+                }
+                if b["exit_reason"] == "sold" {
+                    sold = sold + 1
+                }
+            }
+            print(
+                "month", m + 1, "/", months,
+                " alive=", alive,
+                " bankrupt=", bankrupt,
+                " sold=", sold,
+                " demand=", world["demand_index"]
+            )
+        }
+
+        m = m + 1
+    }
+
+    let outcome_rows = []
+    let oi = 0
+    while oi < n_businesses {
+        let b = businesses[oi]
+        if b["active"] and b["exit_reason"] == "" {
+            b["exit_reason"] = "survived"
+            businesses[oi] = b
+        }
+        push(outcome_rows, outcome_row(businesses[oi]))
+        oi = oi + 1
+    }
+
+    export_all(world_rows, biz_rows, monthly_rows, event_rows, decision_rows, outcome_rows)
+
+    let survived = 0
+    let bankrupt_n = 0
+    let sold_n = 0
+    for b in businesses {
+        if b["exit_reason"] == "survived" {
+            survived = survived + 1
+        }
+        if b["exit_reason"] == "bankrupt" {
+            bankrupt_n = bankrupt_n + 1
+        }
+        if b["exit_reason"] == "sold" {
+            sold_n = sold_n + 1
+        }
+    }
+
+    print()
+    print("Summary")
+    print("  survived :", survived)
+    print("  bankrupt :", bankrupt_n)
+    print("  sold     :", sold_n)
+    print("  monthly rows:", len(monthly_rows))
+    print("  events:", len(event_rows))
+    print("  decisions:", len(decision_rows))
+}
+
+fn __main__(n_businesses = 30, months = 60, seed = 42) {
+    run_simulation(n_businesses, months, seed)
+}

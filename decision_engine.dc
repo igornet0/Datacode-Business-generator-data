@@ -1,0 +1,114 @@
+# Decision Engine — эвристики владельца
+
+from util import chance, clamp, round2
+
+fn decide_actions(biz, world, last_profit) {
+    let actions = []
+
+    if !biz["active"] {
+        return actions
+    }
+
+    # найм при росте и прибыли
+    if (biz["stage"] == "growth" or biz["stage"] == "scale") and last_profit > 0 and chance(0.25) {
+        push(actions, {"action": "hire", "delta": 1})
+    }
+
+    # увольнение при убытках
+    if last_profit < 0 and biz["employees"] > 2 and chance(0.3) {
+        push(actions, {"action": "fire", "delta": -1})
+    }
+
+    # цена
+    if biz["reputation"] > 0.7 and last_profit > 0 and chance(0.15) {
+        push(actions, {"action": "raise_price", "mult": 1.03})
+    }
+    if last_profit < 0 and chance(0.2) {
+        push(actions, {"action": "lower_price", "mult": 0.97})
+    }
+
+    # маркетинг
+    if biz["cash"] > biz["rent"] * 3 and chance(0.2) {
+        push(actions, {"action": "increase_marketing", "mult": 1.15})
+    }
+    if biz["cash"] < biz["rent"] and biz["marketing_budget"] > 10000 and chance(0.35) {
+        push(actions, {"action": "cut_marketing", "mult": 0.75})
+    }
+
+    # кредит при кассовом разрыве
+    if biz["cash"] < biz["rent"] * 0.5 and biz["debt"] < biz["initial_investment"] * 0.8 and chance(0.4) {
+        let amount = round2(biz["rent"] * (2 + random() * 3))
+        push(actions, {"action": "take_loan", "amount": amount})
+    }
+
+    # оборудование при масштабировании
+    if biz["stage"] == "scale" and biz["cash"] > 500000 and chance(0.12) {
+        push(actions, {"action": "buy_equipment", "amount": 300000})
+    }
+
+    # филиал / ёмкость
+    if biz["stage"] == "scale" and biz["cash"] > biz["initial_investment"] * 0.3 and chance(0.08) {
+        push(actions, {"action": "expand_capacity", "mult": 1.15})
+    }
+
+    return actions
+}
+
+fn apply_decision(biz, world, action) {
+    let name = action["action"]
+
+    if name == "hire" {
+        biz["employees"] = biz["employees"] + action["delta"]
+        biz["salary"] = round2(biz["salary"] * (1 + world["inflation"] * 0.2))
+    }
+    if name == "fire" {
+        biz["employees"] = max(1, biz["employees"] + action["delta"])
+        biz["quality"] = clamp(biz["quality"] - 0.01, 0.1, 1.0)
+    }
+    if name == "raise_price" or name == "lower_price" {
+        biz["price_mult"] = clamp(biz["price_mult"] * action["mult"], 0.5, 2.0)
+    }
+    if name == "increase_marketing" or name == "cut_marketing" {
+        biz["marketing_budget"] = round2(biz["marketing_budget"] * action["mult"])
+    }
+    if name == "take_loan" {
+        biz["cash"] = round2(biz["cash"] + action["amount"])
+        biz["debt"] = round2(biz["debt"] + action["amount"])
+    }
+    if name == "buy_equipment" {
+        if biz["cash"] >= action["amount"] {
+            biz["cash"] = round2(biz["cash"] - action["amount"])
+            biz["equipment"] = round2(biz["equipment"] + action["amount"])
+            biz["capacity"] = clamp(biz["capacity"] + 0.08, 0.4, 2.5)
+            biz["quality"] = clamp(biz["quality"] + 0.02, 0.1, 1.0)
+        }
+    }
+    if name == "expand_capacity" {
+        let cost = round2(biz["rent"] * 2)
+        if biz["cash"] >= cost {
+            biz["cash"] = round2(biz["cash"] - cost)
+            biz["capacity"] = clamp(biz["capacity"] * action["mult"], 0.4, 2.5)
+            biz["rent"] = round2(biz["rent"] * 1.1)
+        }
+    }
+
+    return biz
+}
+
+fn decision_log_headers() {
+    return ["tick", "year", "month", "business_id", "action", "detail"]
+}
+
+fn decision_log_row(world, biz, action) {
+    let detail = ""
+    if "delta" in action {
+        detail = str(action["delta"])
+    }
+    if "mult" in action {
+        detail = str(action["mult"])
+    }
+    if "amount" in action {
+        detail = str(action["amount"])
+    }
+    return [world["tick"], world["year"], world["month"], biz["id"], action["action"], detail]
+}

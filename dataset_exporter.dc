@@ -1,0 +1,40 @@
+# Dataset Exporter — CSV таблицы
+
+import system
+
+from world_generator import world_headers
+from business_generator import business_snapshot_headers, outcome_headers
+from event_engine import event_log_headers
+from decision_engine import decision_log_headers
+from simulation_engine import monthly_headers
+
+fn output_dir() {
+    let base = system.runtime.get_module_path()
+    return path(base) / "output"
+}
+
+fn ensure_output_dir() {
+    let out = output_dir()
+    system.process.exec("mkdir -p \"" + str(out) + "\"")
+    return out
+}
+
+fn save_table_csv(rows, headers, filename) {
+    let out = ensure_output_dir()
+    let t = table(rows, headers)
+    let target = str(out / filename)
+    t.save_csv(filename=target)
+    print("  saved:", target + ".csv", "rows=", len(t))
+    return t
+}
+
+fn export_all(world_rows, biz_rows, monthly_rows, event_rows, decision_rows, outcome_rows) {
+    print("Exporting CSV tables...")
+    save_table_csv(world_rows, world_headers(), "world_history")
+    save_table_csv(biz_rows, business_snapshot_headers(), "businesses")
+    save_table_csv(monthly_rows, monthly_headers(), "monthly_history")
+    save_table_csv(event_rows, event_log_headers(), "events_log")
+    save_table_csv(decision_rows, decision_log_headers(), "decisions_log")
+    save_table_csv(outcome_rows, outcome_headers(), "outcomes")
+    print("Done.")
+}

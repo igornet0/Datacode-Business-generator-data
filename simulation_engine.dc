@@ -1,0 +1,230 @@
+# Simulation Engine — помесячная экономика и жизненный цикл
+
+from util import clamp, round2, noise
+from event_engine import roll_events, apply_event, empty_month_mods, event_log_row
+from decision_engine import decide_actions, apply_decision, decision_log_row
+
+fn tax_rate(biz) {
+    if biz["tax_system"] == "USN_6" {
+        return 0.06
+    }
+    return 0.15
+}
+
+fn compute_revenue(biz, world, month_mods) {
+    let month = world["month"]
+    let season = biz["seasonality"][month - 1]
+    let demand = world["demand_index"] * biz["city_demand_mult"] * month_mods["demand_mult"]
+    let competition = world["competition_index"] * biz["city_competition_mult"]
+    let marketing_lift = 1 + biz["marketing_budget"] / (biz["marketing_budget"] + 500000)
+    let reputation_lift = 0.6 + biz["reputation"] * 0.8
+    let quality_lift = 0.7 + biz["quality"] * 0.6
+    let price_elasticity = clamp(1.15 - (biz["price_mult"] - 1.0) * 0.7, 0.4, 1.5)
+
+    let stage_mult = 1.0
+    if biz["stage"] == "opening" {
+        stage_mult = 0.45 + biz["months_in_stage"] * 0.12
+    }
+    if biz["stage"] == "growth" {
+        stage_mult = 1.05 + min(biz["months_in_stage"], 18) * 0.015
+    }
+    if biz["stage"] == "stable" {
+        stage_mult = 1.0
+    }
+    if biz["stage"] == "scale" {
+        stage_mult = 1.15
+    }
+    if biz["stage"] == "crisis" {
+        stage_mult = 0.65
+    }
+    if biz["stage"] == "recovery" {
+        stage_mult = 0.85
+    }
+
+    if biz["type"] == "saas" {
+        let new_subs = round(
+            biz["marketing_budget"] / 12000 * demand * marketing_lift * (0.4 + random() * 0.6)
+        )
+        let churned = round(biz["subscribers"] * clamp(biz["churn"] + noise(0.01), 0.01, 0.15))
+        biz["subscribers"] = max(0, biz["subscribers"] + new_subs - churned)
+        biz["mrr"] = round2(biz["subscribers"] * biz["avg_check"] * biz["price_mult"] * stage_mult)
+        return round2(biz["mrr"] * reputation_lift * quality_lift)
+    }
+
+    let customers = biz["base_customers"] * season * demand * marketing_lift
+    customers = customers * reputation_lift * quality_lift * price_elasticity
+    customers = customers * stage_mult * biz["capacity"] / max(0.7, competition * 0.85)
+    customers = customers * (0.92 + random() * 0.16)
+    customers = max(0, round(customers))
+
+    let check = biz["avg_check"] * biz["price_mult"] * (1 + world["inflation"] * 0.1)
+    return round2(customers * check)
+}
+
+fn compute_costs(biz, world, revenue, month_mods) {
+    let payroll = biz["employees"] * biz["salary"]
+    let rent = biz["rent"] * (1 + world["inflation"] * 0.15)
+    let cogs = revenue * clamp(biz["cogs_ratio"] + month_mods["cogs_delta"], 0.05, 0.85)
+    let marketing = biz["marketing_budget"]
+    let energy = 25000 * biz["energy_use"] * world["energy_cost"] * biz["capacity"]
+    let logistics = 15000 * world["delivery_cost"] * biz["capacity"]
+    let interest = biz["debt"] * (world["key_rate"] / 12)
+    let maintenance = biz["equipment"] * 0.008
+    let other = 40000 + abs(noise(15000))
+    # фиксированные накладные от масштаба бизнеса
+    let overhead = biz["initial_investment"] * 0.002
+
+    let opex = payroll + rent + cogs + marketing + energy + logistics + interest + maintenance + other + overhead
+    return {
+        "payroll": round2(payroll),
+        "rent": round2(rent),
+        "cogs": round2(cogs),
+        "marketing": round2(marketing),
+        "energy": round2(energy),
+        "logistics": round2(logistics),
+        "interest": round2(interest),
+        "maintenance": round2(maintenance),
+        "other": round2(other + overhead),
+        "opex": round2(opex)
+    }
+}
+
+fn compute_tax(biz, revenue, profit, month_mods) {
+    let rate = tax_rate(biz) + month_mods["tax_extra"]
+    if biz["tax_system"] == "USN_6" {
+        return round2(max(0, revenue * rate))
+    }
+    return round2(max(0, profit * rate))
+}
+
+fn chance_local(p) {
+    return random() < p
+}
+
+fn update_lifecycle(biz, profit, revenue) {
+    biz["months_alive"] = biz["months_alive"] + 1
+    biz["months_in_stage"] = biz["months_in_stage"] + 1
+    let stage = biz["stage"]
+    let m = biz["months_in_stage"]
+
+    if stage == "opening" and m >= 4 {
+        biz["stage"] = "growth"
+        biz["months_in_stage"] = 0
+    } else if stage == "growth" and m >= 12 and profit > 0 {
+        biz["stage"] = "stable"
+        biz["months_in_stage"] = 0
+    } else if stage == "stable" and m >= 8 and biz["cash"] > biz["initial_investment"] * 0.4 and profit > revenue * 0.08 {
+        biz["stage"] = "scale"
+        biz["months_in_stage"] = 0
+    } else if (stage == "growth" or stage == "stable" or stage == "scale") and profit < 0 and m >= 3 {
+        if chance_local(0.35) {
+            biz["stage"] = "crisis"
+            biz["months_in_stage"] = 0
+        }
+    } else if stage == "crisis" and profit > 0 and m >= 2 {
+        biz["stage"] = "recovery"
+        biz["months_in_stage"] = 0
+    } else if stage == "recovery" and m >= 4 and profit > 0 {
+        biz["stage"] = "stable"
+        biz["months_in_stage"] = 0
+    } else if stage == "scale" and m >= 10 and biz["cash"] > biz["initial_investment"] * 0.8 and profit > 0 {
+        if chance_local(0.04) {
+            biz["stage"] = "sold"
+            biz["active"] = false
+            biz["exit_reason"] = "sold"
+            biz["cash"] = round2(biz["cash"] + biz["equipment"] * 0.6)
+        }
+    }
+
+    if biz["active"] and biz["cash"] < -biz["rent"] and biz["debt"] > biz["initial_investment"] * 0.6 {
+        biz["stage"] = "bankrupt"
+        biz["active"] = false
+        biz["exit_reason"] = "bankrupt"
+    }
+    if biz["active"] and biz["cash"] < -biz["rent"] * 4 {
+        biz["stage"] = "bankrupt"
+        biz["active"] = false
+        biz["exit_reason"] = "bankrupt"
+    }
+
+    return biz
+}
+
+fn simulate_business_month(biz, world, last_profit, event_rows, decision_rows) {
+    if !biz["active"] {
+        return {
+            "biz": biz,
+            "revenue": 0,
+            "profit": 0,
+            "row": null
+        }
+    }
+
+    let month_mods = empty_month_mods()
+    let events = roll_events(biz, world)
+    for ev in events {
+        let applied = apply_event(biz, world, ev, month_mods)
+        biz = applied["biz"]
+        world = applied["world"]
+        month_mods = applied["month_mods"]
+        push(event_rows, event_log_row(world, biz, ev["name"]))
+    }
+
+    let actions = decide_actions(biz, world, last_profit)
+    for action in actions {
+        biz = apply_decision(biz, world, action)
+        push(decision_rows, decision_log_row(world, biz, action))
+    }
+
+    let revenue = compute_revenue(biz, world, month_mods)
+    let costs = compute_costs(biz, world, revenue, month_mods)
+    let gross = revenue - costs["opex"]
+    let tax = compute_tax(biz, revenue, gross, month_mods)
+    let profit = round2(gross - tax)
+
+    # погашение долга при прибыли
+    if profit > 0 and biz["debt"] > 0 {
+        let pay = min(biz["debt"], profit * 0.25)
+        biz["debt"] = round2(biz["debt"] - pay)
+        profit = round2(profit - pay)
+    }
+
+    biz["cash"] = round2(biz["cash"] + profit)
+    biz["cum_revenue"] = round2(biz["cum_revenue"] + revenue)
+    biz["cum_profit"] = round2(biz["cum_profit"] + profit)
+    if biz["cash"] > biz["peak_cash"] {
+        biz["peak_cash"] = biz["cash"]
+    }
+
+    # инфляция зарплат/аренды раз в год мягко
+    if world["month"] == 1 {
+        biz["salary"] = round2(biz["salary"] * (1 + world["inflation"] * 6))
+        biz["rent"] = round2(biz["rent"] * (1 + world["inflation"] * 4))
+    }
+
+    biz = update_lifecycle(biz, profit, revenue)
+
+    let row = [
+        world["tick"], world["year"], world["month"], biz["id"], biz["type"], biz["city"],
+        biz["stage"], biz["active"], round2(revenue), round2(costs["opex"]), round2(tax),
+        round2(profit), round2(biz["cash"]), round2(biz["debt"]), biz["employees"],
+        round2(biz["marketing_budget"]), round2(biz["reputation"]), round2(biz["price_mult"]),
+        round2(biz["capacity"]), round2(biz["quality"]), biz["subscribers"], round2(biz["mrr"])
+    ]
+
+    return {
+        "biz": biz,
+        "revenue": revenue,
+        "profit": profit,
+        "row": row
+    }
+}
+
+fn monthly_headers() {
+    return [
+        "tick", "year", "month", "business_id", "type", "city", "stage", "active",
+        "revenue", "opex", "tax", "profit", "cash", "debt", "employees",
+        "marketing_budget", "reputation", "price_mult", "capacity", "quality",
+        "subscribers", "mrr"
+    ]
+}

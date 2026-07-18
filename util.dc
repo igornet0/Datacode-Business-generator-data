@@ -1,0 +1,48 @@
+# Утилиты симулятора
+
+# CLI-аргументы приходят строками; round(float(...)) даёт число,
+# которое принимают random_seed и арифметика.
+fn to_int(v) {
+    return round(float(v))
+}
+
+fn clamp(v, lo, hi) {
+    if v < lo {
+        return lo
+    }
+    if v > hi {
+        return hi
+    }
+    return v
+}
+
+fn round2(v) {
+    return round(v * 100) / 100
+}
+
+fn pick(arr) {
+    let i = random_int(0, len(arr) - 1)
+    return arr[i]
+}
+
+fn chance(p) {
+    return random() < p
+}
+
+fn noise(amplitude) {
+    return (random() * 2 - 1) * amplitude
+}
+
+fn month_index(month) {
+    return ((month - 1) % 12) + 1
+}
+
+fn advance_calendar(year, month) {
+    let m = month + 1
+    let y = year
+    if m > 12 {
+        m = 1
+        y = y + 1
+    }
+    return {"year": y, "month": m}
+}

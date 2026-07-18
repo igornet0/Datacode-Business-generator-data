@@ -1,0 +1,78 @@
+# World Generator — макроэкономика страны
+
+from util import clamp, round2, noise, advance_calendar
+
+fn create_world(start_year, start_month) {
+    return {
+        "year": start_year,
+        "month": start_month,
+        "tick": 0,
+        "inflation": 0.006,
+        "key_rate": 0.16,
+        "unemployment": 0.04,
+        "gdp_growth": 0.002,
+        "purchasing_power": 1.0,
+        "energy_cost": 1.0,
+        "avg_salary": 75000,
+        "delivery_cost": 1.0,
+        "demand_index": 1.0,
+        "competition_index": 1.0,
+        "fx_usd": 90.0
+    }
+}
+
+fn tick_world(world) {
+    let cal = advance_calendar(world["year"], world["month"])
+    world["year"] = cal["year"]
+    world["month"] = cal["month"]
+    world["tick"] = world["tick"] + 1
+
+    world["inflation"] = clamp(world["inflation"] + noise(0.0015), 0.002, 0.02)
+    world["key_rate"] = clamp(world["key_rate"] + noise(0.004), 0.08, 0.25)
+    world["unemployment"] = clamp(world["unemployment"] + noise(0.002), 0.02, 0.12)
+    world["gdp_growth"] = clamp(world["gdp_growth"] + noise(0.0015), -0.01, 0.008)
+    world["purchasing_power"] = clamp(
+        world["purchasing_power"] * (1 + world["gdp_growth"] - world["inflation"] * 0.3) + noise(0.01),
+        0.6,
+        1.4
+    )
+    world["energy_cost"] = clamp(world["energy_cost"] * (1 + world["inflation"] * 0.8 + noise(0.01)), 0.7, 2.5)
+    world["avg_salary"] = round2(world["avg_salary"] * (1 + world["inflation"] * 0.7 + noise(0.005)))
+    world["delivery_cost"] = clamp(world["delivery_cost"] * (1 + world["inflation"] * 0.5 + noise(0.008)), 0.8, 2.0)
+    world["demand_index"] = clamp(
+        world["demand_index"] * (1 + world["gdp_growth"] * 2) * (0.98 + world["purchasing_power"] * 0.02) + noise(0.02),
+        0.5,
+        1.6
+    )
+    world["competition_index"] = clamp(world["competition_index"] + noise(0.015), 0.6, 1.8)
+    world["fx_usd"] = clamp(world["fx_usd"] * (1 + noise(0.02)), 60.0, 150.0)
+
+    return world
+}
+
+fn world_row(world) {
+    return [
+        world["tick"],
+        world["year"],
+        world["month"],
+        round2(world["inflation"]),
+        round2(world["key_rate"]),
+        round2(world["unemployment"]),
+        round2(world["gdp_growth"]),
+        round2(world["purchasing_power"]),
+        round2(world["energy_cost"]),
+        round2(world["avg_salary"]),
+        round2(world["delivery_cost"]),
+        round2(world["demand_index"]),
+        round2(world["competition_index"]),
+        round2(world["fx_usd"])
+    ]
+}
+
+fn world_headers() {
+    return [
+        "tick", "year", "month", "inflation", "key_rate", "unemployment",
+        "gdp_growth", "purchasing_power", "energy_cost", "avg_salary",
+        "delivery_cost", "demand_index", "competition_index", "fx_usd"
+    ]
+}

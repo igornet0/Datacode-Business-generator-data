@@ -1,0 +1,107 @@
+# Event Engine — случайные события месяца
+
+from util import chance, clamp, round2
+
+fn event_catalog() {
+    return [
+        {"name": "competitor_appeared", "p": 0.08, "severity": -0.03, "demand": -0.02, "competition": 0.05},
+        {"name": "competitor_closed", "p": 0.05, "reputation": 0.01, "demand": 0.03, "competition": -0.04},
+        {"name": "staff_left", "p": 0.06, "employees_delta": -0.25, "quality": -0.04},
+        {"name": "rent_increase", "p": 0.07, "rent_mult": 1.12},
+        {"name": "raw_materials_up", "p": 0.08, "cogs_delta": 0.04},
+        {"name": "pandemic_shock", "p": 0.01, "demand_mult": 0.55, "reputation": -0.05},
+        {"name": "flood", "p": 0.008, "cash_loss_share": 0.08, "demand_mult": 0.7},
+        {"name": "new_law", "p": 0.03, "rent_mult": 1.03, "cogs_delta": 0.01},
+        {"name": "tax_hike", "p": 0.025, "tax_shock": 0.02},
+        {"name": "inspection", "p": 0.04, "cash_loss_fixed": 50000, "reputation": -0.02},
+        {"name": "bad_reviews", "p": 0.07, "reputation": -0.06, "demand_mult": 0.92},
+        {"name": "viral_marketing", "p": 0.04, "reputation": 0.08, "demand_mult": 1.25},
+        {"name": "got_investment", "p": 0.02, "cash_boost": 2000000, "stage_hint": "growth"},
+        {"name": "got_grant", "p": 0.015, "cash_boost": 500000},
+        {"name": "key_rate_down", "p": 0.03, "world_key_rate": -0.01},
+        {"name": "equipment_breakdown", "p": 0.05, "cash_loss_fixed": 120000, "capacity": -0.1},
+        {"name": "good_season_boost", "p": 0.05, "demand_mult": 1.12},
+        {"name": "supplier_discount", "p": 0.04, "cogs_delta": -0.03}
+    ]
+}
+
+fn roll_events(biz, world) {
+    let catalog = event_catalog()
+    let happened = []
+    for ev in catalog {
+        let p = ev["p"]
+        # в кризисе негативные события чуть чаще
+        if biz["stage"] == "crisis" and p < 0.1 {
+            p = p * 1.3
+        }
+        if chance(p) {
+            push(happened, ev)
+        }
+    }
+    return happened
+}
+
+fn apply_event(biz, world, ev, month_mods) {
+    if "reputation" in ev {
+        biz["reputation"] = clamp(biz["reputation"] + ev["reputation"], 0.05, 1.0)
+    }
+    if "quality" in ev {
+        biz["quality"] = clamp(biz["quality"] + ev["quality"], 0.1, 1.0)
+    }
+    if "competition" in ev {
+        world["competition_index"] = clamp(world["competition_index"] + ev["competition"], 0.5, 2.0)
+    }
+    if "demand" in ev {
+        world["demand_index"] = clamp(world["demand_index"] + ev["demand"], 0.4, 1.8)
+    }
+    if "rent_mult" in ev {
+        biz["rent"] = round2(biz["rent"] * ev["rent_mult"])
+    }
+    if "cogs_delta" in ev {
+        month_mods["cogs_delta"] = month_mods["cogs_delta"] + ev["cogs_delta"]
+    }
+    if "demand_mult" in ev {
+        month_mods["demand_mult"] = month_mods["demand_mult"] * ev["demand_mult"]
+    }
+    if "employees_delta" in ev {
+        let leave = max(1, round(biz["employees"] * abs(ev["employees_delta"])))
+        biz["employees"] = max(1, biz["employees"] - leave)
+    }
+    if "cash_boost" in ev {
+        biz["cash"] = round2(biz["cash"] + ev["cash_boost"])
+    }
+    if "cash_loss_fixed" in ev {
+        biz["cash"] = round2(biz["cash"] - ev["cash_loss_fixed"])
+    }
+    if "cash_loss_share" in ev {
+        biz["cash"] = round2(biz["cash"] * (1 - ev["cash_loss_share"]))
+    }
+    if "capacity" in ev {
+        biz["capacity"] = clamp(biz["capacity"] + ev["capacity"], 0.4, 2.5)
+    }
+    if "tax_shock" in ev {
+        month_mods["tax_extra"] = month_mods["tax_extra"] + ev["tax_shock"]
+    }
+    if "world_key_rate" in ev {
+        world["key_rate"] = clamp(world["key_rate"] + ev["world_key_rate"], 0.05, 0.3)
+    }
+    if "stage_hint" in ev {
+        if biz["stage"] == "opening" or biz["stage"] == "crisis" {
+            biz["stage"] = ev["stage_hint"]
+            biz["months_in_stage"] = 0
+        }
+    }
+    return {"biz": biz, "world": world, "month_mods": month_mods}
+}
+
+fn empty_month_mods() {
+    return {"demand_mult": 1.0, "cogs_delta": 0.0, "tax_extra": 0.0}
+}
+
+fn event_log_headers() {
+    return ["tick", "year", "month", "business_id", "business_type", "event_name"]
+}
+
+fn event_log_row(world, biz, event_name) {
+    return [world["tick"], world["year"], world["month"], biz["id"], biz["type"], event_name]
+}
